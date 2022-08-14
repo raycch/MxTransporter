@@ -1,13 +1,16 @@
 package client
 
 import (
+	"context"
+
 	"cloud.google.com/go/bigquery"
 	"cloud.google.com/go/pubsub"
 	"cloud.google.com/go/storage"
-	"context"
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	eventbridgeConfig "github.com/cam-inc/mxtransporter/config/eventbridge"
 	kinesisConfig "github.com/cam-inc/mxtransporter/config/kinesis-stream"
 	mongoConfig "github.com/cam-inc/mxtransporter/config/mongodb"
 	"github.com/cam-inc/mxtransporter/pkg/errors"
@@ -39,6 +42,18 @@ func NewKinesisClient(ctx context.Context) (*kinesis.Client, error) {
 	}
 
 	c := kinesis.NewFromConfig(cfg)
+
+	return c, nil
+}
+
+func NewEventBridgeClient(ctx context.Context) (*eventbridge.Client, error) {
+	ebCfg := eventbridgeConfig.EventbridgeConfig()
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(ebCfg.Region))
+	if err != nil {
+		return nil, errors.InternalServerErrorClientGet.Wrap("failed aws load default config.", err)
+	}
+
+	c := eventbridge.NewFromConfig(cfg)
 
 	return c, nil
 }

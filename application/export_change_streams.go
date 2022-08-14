@@ -8,10 +8,13 @@ import (
 
 	"cloud.google.com/go/bigquery"
 	"cloud.google.com/go/pubsub"
+	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis"
 	"github.com/cam-inc/mxtransporter/config"
+	"github.com/cam-inc/mxtransporter/config/mongodb"
 	pconfig "github.com/cam-inc/mxtransporter/config/pubsub"
 	interfaceForBigquery "github.com/cam-inc/mxtransporter/interfaces/bigquery"
+	interfaceForEventbridge "github.com/cam-inc/mxtransporter/interfaces/eventbridge"
 	iff "github.com/cam-inc/mxtransporter/interfaces/file"
 	interfaceForKinesisStream "github.com/cam-inc/mxtransporter/interfaces/kinesis-stream"
 	mongoConnection "github.com/cam-inc/mxtransporter/interfaces/mongo"
@@ -32,6 +35,7 @@ const (
 	BigQuery      agent = "bigquery"
 	CloudPubSub   agent = "pubsub"
 	KinesisStream agent = "kinesisStream"
+	Eventbridge   agent = "eventbridge"
 	File          agent = "file"
 )
 
@@ -40,6 +44,7 @@ type (
 		newBigqueryClient(ctx context.Context, projectID string) (*bigquery.Client, error)
 		newPubsubClient(ctx context.Context, projectID string) (*pubsub.Client, error)
 		newKinesisClient(ctx context.Context) (*kinesis.Client, error)
+		newEventbridgeClient(ctx context.Context) (*eventbridge.Client, error)
 		watch(ctx context.Context, ops *options.ChangeStreamOptions) (*mongo.ChangeStream, error)
 		newFileClient(ctx context.Context) (iff.Exporter, error)
 		setCsExporter(exporter ChangeStreamsExporterImpl)
@@ -56,6 +61,10 @@ type (
 		MongoClient *mongo.Client
 		CsExporter  ChangeStreamsExporterImpl
 	}
+)
+
+var (
+	mongoCfg = mongodb.MongoConfig()
 )
 
 func (*ChangeStreamsWatcherClientImpl) newBigqueryClient(ctx context.Context, projectID string) (*bigquery.Client, error) {
@@ -80,6 +89,14 @@ func (*ChangeStreamsWatcherClientImpl) newKinesisClient(ctx context.Context) (*k
 		return nil, err
 	}
 	return ksClient, nil
+}
+
+func (*ChangeStreamsWatcherClientImpl) newEventbridgeClient(ctx context.Context) (*eventbridge.Client, error) {
+	ebClient, err := client.NewEventBridgeClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return ebClient, nil
 }
 
 func (*ChangeStreamsWatcherClientImpl) newFileClient(_ context.Context) (iff.Exporter, error) {
@@ -116,7 +133,7 @@ func (c *ChangeStreamsWatcherImpl) WatchChangeStreams(ctx context.Context) error
 	}
 
 	rt := c.resumeTokenManager.ReadResumeToken(ctx)
-	ops := options.ChangeStream().SetFullDocument(options.UpdateLookup)
+	ops := options.ChangeStream().SetFullDocument(mongoCfg.FullDocument).SetFullDocumentBeforeChange(mongoCfg.FullDocumentBeforeChange)
 
 	if len(rt) == 0 {
 		c.Log.Info("File saved resume token in is not exists. Get from the current change streams.")
@@ -147,6 +164,7 @@ func (c *ChangeStreamsWatcherImpl) WatchChangeStreams(ctx context.Context) error
 		bqImpl interfaceForBigquery.BigqueryImpl
 		psImpl interfaceForPubsub.PubsubImpl
 		ksImpl interfaceForKinesisStream.KinesisStreamImpl
+		ebImpl interfaceForEventbridge.EventbridgeImpl
 		fe     iff.Exporter
 	)
 
@@ -174,6 +192,13 @@ func (c *ChangeStreamsWatcherImpl) WatchChangeStreams(ctx context.Context) error
 			}
 			ksClientImpl := &interfaceForKinesisStream.KinesisStreamClientImpl{ksClient}
 			ksImpl = interfaceForKinesisStream.KinesisStreamImpl{ksClientImpl}
+		case Eventbridge:
+			ebClient, err := c.Watcher.newEventbridgeClient(ctx)
+			if err != nil {
+				return err
+			}
+			ebClientImpl := &interfaceForEventbridge.EventbridgeClientImpl{ebClient}
+			ebImpl = interfaceForEventbridge.EventbridgeImpl{ebClientImpl}
 		case File:
 			fCli, err := c.Watcher.newFileClient(ctx)
 			if err != nil {
@@ -190,6 +215,7 @@ func (c *ChangeStreamsWatcherImpl) WatchChangeStreams(ctx context.Context) error
 		bq:            bqImpl,
 		pubsub:        psImpl,
 		kinesisStream: ksImpl,
+		eventbridge:   ebImpl,
 		fileExporter:  fe,
 		resumeToken:   c.resumeTokenManager,
 	}
@@ -215,6 +241,7 @@ type (
 		exportToBigquery(ctx context.Context, cs primitive.M) error
 		exportToPubsub(ctx context.Context, cs primitive.M) error
 		exportToKinesisStream(ctx context.Context, cs primitive.M) error
+		ExportToEventbridge(ctx context.Context, cs primitive.M) error
 		exportToFile(ctx context.Context, cs primitive.M) error
 		saveResumeToken(ctx context.Context, rt string) error
 		err() error
@@ -230,6 +257,7 @@ type (
 		bq            interfaceForBigquery.BigqueryImpl
 		pubsub        interfaceForPubsub.PubsubImpl
 		kinesisStream interfaceForKinesisStream.KinesisStreamImpl
+		eventbridge   interfaceForEventbridge.EventbridgeImpl
 		fileExporter  iff.Exporter
 		resumeToken   irt.ResumeToken
 	}
@@ -262,6 +290,10 @@ func (c *changeStreamsExporterClientImpl) exportToPubsub(ctx context.Context, cs
 
 func (c *changeStreamsExporterClientImpl) exportToKinesisStream(ctx context.Context, cs primitive.M) error {
 	return c.kinesisStream.ExportToKinesisStream(ctx, cs)
+}
+
+func (c *changeStreamsExporterClientImpl) ExportToEventbridge(ctx context.Context, cs primitive.M) error {
+	return c.eventbridge.ExportToEventbridge(ctx, cs)
 }
 
 func (c *changeStreamsExporterClientImpl) exportToFile(ctx context.Context, cs primitive.M) error {
@@ -298,7 +330,12 @@ func (c *ChangeStreamsExporterImpl) exportChangeStreams(ctx context.Context) err
 		csClusterTimeInt := time.Unix(int64(csMap["clusterTime"].(primitive.Timestamp).T), 0)
 
 		c.log.Infof("Success to get change-streams, database: %s, collection: %s, operationType: %s, updateTime: %s", csDb, csColl, csOpType, csClusterTimeInt)
-
+		if mongoCfg.MongoDbCollection == "" &&
+			mongoCfg.MongoDbCollectionFilter != nil &&
+			!mongoCfg.MongoDbCollectionFilter.MatchString(csColl) {
+			// skip the event if watching whole database and the collection doesn't match the filter
+			continue
+		}
 		var eg errgroup.Group
 		for i := 0; i < len(expDstList); i++ {
 			eDst := expDstList[i]
@@ -314,6 +351,10 @@ func (c *ChangeStreamsExporterImpl) exportChangeStreams(ctx context.Context) err
 					}
 				case KinesisStream:
 					if err := c.exporter.exportToKinesisStream(ctx, csMap); err != nil {
+						return err
+					}
+				case Eventbridge:
+					if err := c.exporter.ExportToEventbridge(ctx, csMap); err != nil {
 						return err
 					}
 				case File:

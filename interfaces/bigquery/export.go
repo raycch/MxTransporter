@@ -1,23 +1,25 @@
 package bigquery
 
 import (
-	"cloud.google.com/go/bigquery"
 	"context"
 	"encoding/json"
+	"time"
+
+	"cloud.google.com/go/bigquery"
 	bigqueryConfig "github.com/cam-inc/mxtransporter/config/bigquery"
 	"github.com/cam-inc/mxtransporter/pkg/errors"
 	"go.mongodb.org/mongo-driver/bson/primitive"
-	"time"
 )
 
 type ChangeStreamTableSchema struct {
-	ID                string
-	OperationType     string
-	ClusterTime       time.Time
-	FullDocument      string
-	Ns                string
-	DocumentKey       string
-	UpdateDescription string
+	ID                       string
+	OperationType            string
+	ClusterTime              time.Time
+	FullDocument             string
+	FullDocumentBeforeChange string
+	Ns                       string
+	DocumentKey              string
+	UpdateDescription        string
 }
 
 type (
@@ -51,6 +53,10 @@ func (b *BigqueryImpl) ExportToBigquery(ctx context.Context, cs primitive.M) err
 	if err != nil {
 		return errors.InternalServerErrorJsonMarshal.Wrap("Failed to marshal change streams json fullDocument parameter.", err)
 	}
+	fullDocBefore, err := json.Marshal(cs["fullDocumentBeforeChange"])
+	if err != nil {
+		return errors.InternalServerErrorJsonMarshal.Wrap("Failed to marshal change streams json fullDocumentBeforeChange parameter.", err)
+	}
 	ns, err := json.Marshal(cs["ns"])
 	if err != nil {
 		return errors.InternalServerErrorJsonMarshal.Wrap("Failed to marshal change streams json ns parameter.", err)
@@ -66,13 +72,14 @@ func (b *BigqueryImpl) ExportToBigquery(ctx context.Context, cs primitive.M) err
 
 	csItems := []ChangeStreamTableSchema{
 		{
-			ID:                string(id),
-			OperationType:     opType,
-			ClusterTime:       time.Unix(int64(clusterTime), 0),
-			FullDocument:      string(fullDoc),
-			Ns:                string(ns),
-			DocumentKey:       string(docKey),
-			UpdateDescription: string(updDesc),
+			ID:                       string(id),
+			OperationType:            opType,
+			ClusterTime:              time.Unix(int64(clusterTime), 0),
+			FullDocument:             string(fullDoc),
+			FullDocumentBeforeChange: string(fullDocBefore),
+			Ns:                       string(ns),
+			DocumentKey:              string(docKey),
+			UpdateDescription:        string(updDesc),
 		},
 	}
 

@@ -2,6 +2,7 @@ package mongo
 
 import (
 	"context"
+
 	"github.com/cam-inc/mxtransporter/config/mongodb"
 	"github.com/cam-inc/mxtransporter/pkg/common"
 	"github.com/cam-inc/mxtransporter/pkg/errors"
@@ -14,6 +15,11 @@ import (
 var (
 	mongoCfg = mongodb.MongoConfig()
 )
+
+type Watchable interface {
+	Watch(ctx context.Context, pipeline interface{},
+		opts ...*options.ChangeStreamOptions) (*mongo.ChangeStream, error)
+}
 
 func Health(ctx context.Context, client *mongo.Client) error {
 	if err := client.Ping(ctx, readpref.Primary()); err != nil {
@@ -53,13 +59,14 @@ func Watch(ctx context.Context, client *mongo.Client, ops *options.ChangeStreamO
 	if err != nil {
 		return nil, err
 	}
-
-	coll, err := fetchCollection(ctx, db)
-	if err != nil {
-		return nil, err
+	var target Watchable = db
+	if mongoCfg.MongoDbCollection != "" {
+		target, err = fetchCollection(ctx, db)
+		if err != nil {
+			return nil, err
+		}
 	}
-
-	cs, err := coll.Watch(ctx, mongo.Pipeline{}, ops)
+	cs, err := target.Watch(ctx, mongo.Pipeline{}, ops)
 	if err != nil {
 		return nil, errors.InternalServerErrorMongoDbOperate.Wrap("Failed to watch mongodb.", err)
 	}

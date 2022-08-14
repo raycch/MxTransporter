@@ -24,6 +24,8 @@ const (
 	InvalidErrorPubSubOrderingKey    = errType("400: pubsub ordering key error")
 	// kinesis stream
 	InternalServerErrorKinesisStreamPut = errType("500: kinesis stream put error")
+	// eventbridge
+	InternalServerErrorEventbridgePut = errType("500: eventbridge put error")
 	// local storage file
 	InternalServerErrorFilePut = errType("500: file put error")
 

@@ -102,6 +102,10 @@ func (p *PubsubImpl) ExportToPubsub(ctx context.Context, cs primitive.M) error {
 	if err != nil {
 		return errors.InternalServerErrorJsonMarshal.Wrap("Failed to marshal change streams json fullDocument parameter.", err)
 	}
+	fullDocBefore, err := json.Marshal(cs["fullDocumentBeforeChange"])
+	if err != nil {
+		return errors.InternalServerErrorJsonMarshal.Wrap("Failed to marshal change streams json fullDocumentBeforeChange parameter.", err)
+	}
 	ns, err := json.Marshal(cs["ns"])
 	if err != nil {
 		return errors.InternalServerErrorJsonMarshal.Wrap("Failed to marshal change streams json ns parameter.", err)
@@ -120,6 +124,7 @@ func (p *PubsubImpl) ExportToPubsub(ctx context.Context, cs primitive.M) error {
 		opType,
 		time.Unix(int64(clusterTime), 0).Format("2006-01-02 15:04:05"),
 		string(fullDoc),
+		string(fullDocBefore),
 		string(ns),
 		string(docKey),
 		string(updDesc),

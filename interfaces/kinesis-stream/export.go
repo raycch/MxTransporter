@@ -3,13 +3,14 @@ package kinesis_stream
 import (
 	"context"
 	"encoding/json"
+	"strings"
+	"time"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis"
 	kinesisConfig "github.com/cam-inc/mxtransporter/config/kinesis-stream"
 	"github.com/cam-inc/mxtransporter/pkg/errors"
 	"go.mongodb.org/mongo-driver/bson/primitive"
-	"strings"
-	"time"
 )
 
 type (
@@ -49,6 +50,10 @@ func (k *KinesisStreamImpl) ExportToKinesisStream(ctx context.Context, cs primit
 	if err != nil {
 		return errors.InternalServerErrorJsonMarshal.Wrap("Failed to marshal change streams json fullDocument parameter.", err)
 	}
+	fullDocBefore, err := json.Marshal(cs["fullDocumentBeforeChange"])
+	if err != nil {
+		return errors.InternalServerErrorJsonMarshal.Wrap("Failed to marshal change streams json fullDocumentBeforeChange parameter.", err)
+	}
 	ns, err := json.Marshal(cs["ns"])
 	if err != nil {
 		return errors.InternalServerErrorJsonMarshal.Wrap("Failed to marshal change streams json ns parameter.", err)
@@ -67,6 +72,7 @@ func (k *KinesisStreamImpl) ExportToKinesisStream(ctx context.Context, cs primit
 		opType,
 		time.Unix(int64(clusterTime), 0).Format("2006-01-02 15:04:05"),
 		string(fullDoc),
+		string(fullDocBefore),
 		string(ns),
 		string(docKey),
 		string(updDesc),

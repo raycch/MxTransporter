@@ -3,12 +3,13 @@ package file
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"time"
+
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/natefinch/lumberjack.v2"
-	"os"
-	"time"
 )
 
 type (
@@ -41,13 +42,14 @@ type (
 		primitive.Timestamp
 	}
 	csDoc struct {
-		ID                primitive.M `json:"_id"`
-		OperationType     string      `json:"operationType"`
-		ClusterTime       timestamp   `json:"clusterTime"`
-		Ns                primitive.M `json:"ns"`
-		FullDocument      primitive.M `json:"fullDocument"`
-		DocumentKey       primitive.M `json:"documentKey"`
-		UpdateDescription primitive.M `json:"updateDescription"`
+		ID                       primitive.M `json:"_id"`
+		OperationType            string      `json:"operationType"`
+		ClusterTime              timestamp   `json:"clusterTime"`
+		Ns                       primitive.M `json:"ns"`
+		FullDocument             primitive.M `json:"fullDocument"`
+		FullDocumentBeforeChange primitive.M `json:"fullDocumentBeforeChange"`
+		DocumentKey              primitive.M `json:"documentKey"`
+		UpdateDescription        primitive.M `json:"updateDescription"`
 	}
 )
 
